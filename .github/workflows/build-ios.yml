@@ -26,6 +26,7 @@ jobs:
           app="$RUNNER_TEMP/tvremote-build/Build/Products/Release-iphoneos/TVRemote.app"
           test -x "$app/TVRemote"
           /usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$app/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSBonjourServices:0' "$app/Info.plist")" = '_androidtvremote2._tcp'
           mkdir -p "$RUNNER_TEMP/tvremote-ipa/Payload"
           ditto "$app" "$RUNNER_TEMP/tvremote-ipa/Payload/TVRemote.app"
           cd "$RUNNER_TEMP/tvremote-ipa"
