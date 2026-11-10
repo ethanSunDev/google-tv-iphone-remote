@@ -1,0 +1,33 @@
+name: TVRemote
+options:
+  deploymentTarget:
+    iOS: '16.0'
+packages:
+  AndroidTVRemoteControl:
+    url: https://github.com/odyshewroman/AndroidTVRemoteControl.git
+    exactVersion: 2.4.16
+schemes:
+  TVRemote:
+    build:
+      targets:
+        TVRemote: all
+targets:
+  TVRemote:
+    type: application
+    platform: iOS
+    sources: [App]
+    info:
+      path: TVRemote-Info.plist
+      properties:
+        CFBundleDisplayName: 电视遥控器
+        NSLocalNetworkUsageDescription: 用于在家庭局域网内配对和控制 Google TV。
+        UILaunchScreen: {}
+    dependencies:
+      - package: AndroidTVRemoteControl
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ca.ethansun.tvremote
+        TARGETED_DEVICE_FAMILY: '1'
+        MARKETING_VERSION: '1.0'
+        CURRENT_PROJECT_VERSION: '1'
+        SWIFT_VERSION: '5.0'

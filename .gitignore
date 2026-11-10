@@ -1,0 +1,5 @@
+.DS_Store
+TVRemote.xcodeproj/
+TVRemote-Info.plist
+*.ipa
+build/
