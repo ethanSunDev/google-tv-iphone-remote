@@ -18,4 +18,9 @@
 
 从 1.0 更新时，用原来的 Apple 账号和签名方式覆盖安装。iOS 保留原 App 的数据和钥匙串时，1.1 可以直接使用上次配对。
 
+## 文字与语音
+
+- 电视上选中输入框后，点「键盘」，在 iPhone 输入或粘贴文字，再点「发送到电视」。输入框是否支持远程文字取决于电视 App。
+- 按住「按住说话」，等电视开启语音搜索并且手机显示「正在听」后说话，松开结束。首次使用时需要允许麦克风访问。语音发给已配对的电视，由电视的语音助手处理。
+
 项目通过 Swift Package Manager 引用 [AndroidTVRemoteControl 2.4.16](https://github.com/odyshewroman/AndroidTVRemoteControl/tree/2.4.16)。遥控身份的私钥在 iPhone 上生成并保存在钥匙串，IPA 内没有配对私钥。

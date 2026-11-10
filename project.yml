@@ -23,6 +23,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSLocalNetworkUsageDescription: 用于在家庭局域网内配对和控制 Google TV。
+        NSMicrophoneUsageDescription: 按住说话时，将 iPhone 麦克风的音频发送到已连接的 Google TV 进行语音搜索。
         NSBonjourServices:
           - _androidtvremote2._tcp
         UILaunchScreen: {}
@@ -32,6 +33,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.ethansun.tvremote
         TARGETED_DEVICE_FAMILY: '1'
-        MARKETING_VERSION: '1.1'
-        CURRENT_PROJECT_VERSION: '2'
+        MARKETING_VERSION: '1.2'
+        CURRENT_PROJECT_VERSION: '3'
         SWIFT_VERSION: '5.0'

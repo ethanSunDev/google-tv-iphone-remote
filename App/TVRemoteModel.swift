@@ -13,15 +13,26 @@ final class TVRemoteModel: ObservableObject {
     @Published var code = ""
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var status = "输入电视的局域网 IP 地址。"
+    @Published private(set) var textSupported = false
+    @Published private(set) var textFocused = false
+    @Published private(set) var voiceSupported = false
+    @Published private(set) var voiceActive = false
+    @Published private(set) var voiceStatus: String?
 
     private let defaults = UserDefaults.standard
     private var identity: TVIdentity?
     private var pairing: PairingManager?
-    private var remote: RemoteManager?
+    private var remote: TVRemoteChannel?
     private var attempt = UUID()
     private var timeout: Task<Void, Never>?
     private var retry: Task<Void, Never>?
     private var discovery: TVDiscovery?
+    private let microphone = TVVoiceCapture()
+    private var voiceRequest: UUID?
+    private var voiceSession: UInt64?
+    private var voiceTimeout: Task<Void, Never>?
+    private var audio = Data()
+    private let audioChunkSize = 8_192
 
     private var address: String { host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
     private var pin: String { code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
@@ -108,9 +119,83 @@ final class TVRemoteModel: ObservableObject {
 
     func send(_ key: Key) {
         guard phase == .ready else { return }
-        let payload = KeyPress(key).data
-        // A key press fits in a single-byte varint length. Send the whole frame together.
-        remote?.send(Data([UInt8(payload.count)]) + payload)
+        remote?.send(KeyPress(key).data)
+    }
+
+    func sendText(_ text: String) -> Bool {
+        guard phase == .ready, textSupported else { return false }
+        return remote?.sendText(text) == true
+    }
+
+    func startVoice() {
+        guard phase == .ready, voiceSupported, voiceRequest == nil else { return }
+        let request = UUID()
+        voiceRequest = request
+        voiceActive = true
+        voiceStatus = "等待电视语音搜索…"
+        Task { [weak self] in
+            let allowed = await TVVoiceCapture.requestPermission()
+            guard let self, self.voiceRequest == request else { return }
+            guard allowed else {
+                self.finishVoice(message: "请在 iPhone 设置中允许访问麦克风。")
+                return
+            }
+            self.send(.KEYCODE_SEARCH)
+            self.armVoiceTimeout(seconds: 4, message: "电视未开启语音搜索，请检查电视的语音助手设置。")
+        }
+    }
+
+    func finishVoice(message: String? = nil, notifyTV: Bool = true) {
+        voiceRequest = nil
+        voiceTimeout?.cancel()
+        voiceTimeout = nil
+        microphone.stop()
+        if notifyTV, let id = voiceSession {
+            if !audio.isEmpty {
+                audio.append(Data(repeating: 0, count: audioChunkSize - audio.count))
+                remote?.sendVoice(31, session: id, audio: audio)
+            }
+            remote?.sendVoice(32, session: id)
+        }
+        voiceSession = nil
+        audio.removeAll()
+        voiceActive = false
+        voiceStatus = message
+    }
+
+    private func beginVoice(session id: UInt64) {
+        guard let request = voiceRequest, voiceSession == nil else { return }
+        voiceSession = id
+        remote?.sendVoice(30, session: id)
+        do {
+            try microphone.start { [weak self] data in
+                DispatchQueue.main.async {
+                    guard let self, self.voiceRequest == request else { return }
+                    self.appendVoice(data, session: id)
+                }
+            }
+            voiceStatus = "正在听…松开结束"
+            armVoiceTimeout(seconds: 25, message: nil)
+        } catch {
+            finishVoice(message: "无法启动 iPhone 麦克风。")
+        }
+    }
+
+    private func appendVoice(_ data: Data, session: UInt64) {
+        audio.append(data)
+        while audio.count >= audioChunkSize {
+            remote?.sendVoice(31, session: session, audio: Data(audio.prefix(audioChunkSize)))
+            audio.removeFirst(audioChunkSize)
+        }
+    }
+
+    private func armVoiceTimeout(seconds: UInt64, message: String?) {
+        voiceTimeout?.cancel()
+        voiceTimeout = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.finishVoice(message: message)
+        }
     }
 
     func resume() {
@@ -149,11 +234,15 @@ final class TVRemoteModel: ObservableObject {
     }
 
     private func clearConnection() {
+        finishVoice(notifyTV: false)
+        textSupported = false
+        textFocused = false
+        voiceSupported = false
         attempt = UUID()
         timeout?.cancel()
         timeout = nil
         pairing?.disconnect()
-        remote?.disconnect()
+        remote?.close()
         pairing = nil
         remote = nil
     }
@@ -215,49 +304,38 @@ final class TVRemoteModel: ObservableObject {
         clearConnection()
         code = ""
         do {
-            let peer = PeerKey()
-            let tls = makeTLS(try getIdentity(), peer: peer)
-            let info = CommandNetwork.DeviceInfo("Apple", "iPhone", "1.0", "ca.ethansun.tvremote", "1")
-            let manager = RemoteManager(tls, info)
             let token = attempt
-            manager.stateChanged = { [weak self] state in
-                DispatchQueue.main.async {
-                    guard let self, self.attempt == token else { return }
-                    switch state {
-                    case .connected, .paired:
-                        guard peer.bytes() == expected else {
-                            self.remoteFailed("电视证书与上次配对不同。请核对 IP 后重新配对。", recover: recover)
-                            return
-                        }
-                        if case .paired = state {
-                            self.timeout?.cancel()
-                            self.timeout = nil
-                            self.remember(address, key: expected)
-                            self.phase = .ready
-                            self.status = "已连接 · \(address)"
-                        }
-                    case .error(let error):
-                        self.remoteFailed("连接中断或失败。请检查电视和局域网。\n\(error.localizedDescription)",
-                                          recover: recover)
-                    default:
-                        break
-                    }
+            let identity = try getIdentity()
+            let channel = TVRemoteChannel(host: address, identity: identity.identity, expectedKey: expected) { [weak self] event in
+                guard let self, self.attempt == token else { return }
+                switch event {
+                case .ready(let text, let voice):
+                    self.timeout?.cancel()
+                    self.timeout = nil
+                    self.remember(address, key: expected)
+                    self.phase = .ready
+                    self.textSupported = text
+                    self.voiceSupported = voice
+                    self.status = "已连接 · \(address)"
+                case .textFocus(let focused): self.textFocused = focused
+                case .voiceBegin(let id): self.beginVoice(session: id)
+                case .voiceEnd(let id):
+                    if self.voiceSession == id { self.finishVoice(notifyTV: false) }
+                case .failed(let error):
+                    self.remoteFailed("连接中断或失败。\n\(error)", recover: recover)
                 }
             }
-            manager.receiveData = { [weak self] data, error in
-                guard data == nil, error == nil else { return }
-                DispatchQueue.main.async {
-                    guard let self, self.attempt == token else { return }
-                    self.remoteFailed("电视已关闭连接。", recover: recover)
-                }
+            guard let channel else {
+                stop("无法加载 iPhone 的遥控配对证书。")
+                return
             }
-            remote = manager
+            remote = channel
             phase = .connecting
             status = "正在连接电视…"
             armTimeout(seconds: seconds) { model in
                 model.remoteFailed("连接超时。请确认电视已开机并接入同一局域网。", recover: recover)
             }
-            manager.connect(address)
+            channel.start()
         } catch {
             stop(error.localizedDescription)
         }
