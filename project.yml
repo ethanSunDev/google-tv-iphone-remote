@@ -20,6 +20,8 @@ targets:
       path: TVRemote-Info.plist
       properties:
         CFBundleDisplayName: 电视遥控器
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSLocalNetworkUsageDescription: 用于在家庭局域网内配对和控制 Google TV。
         NSBonjourServices:
           - _androidtvremote2._tcp
