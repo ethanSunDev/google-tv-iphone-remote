@@ -78,7 +78,8 @@ final class TVRemoteChannel {
 
     func sendText(_ text: String) -> Bool {
         guard active, var editor, !text.isEmpty, text.utf8.count <= 16_384 else { return false }
-        let replacement = Wire.integer(1, editor.start) + Wire.integer(2, editor.end) + Wire.string(3, text)
+        let replacement = Wire.integer(1, editor.id == 0 ? 0 : editor.start)
+            + Wire.integer(2, editor.id == 0 ? 0 : editor.end) + Wire.string(3, text)
         let edit = Wire.integer(1, 1) + Wire.bytes(2, replacement)
         let batch = Wire.integer(1, editor.id) + Wire.integer(2, editor.counter) + Wire.bytes(3, edit)
         send(Wire.bytes(21, batch))
@@ -120,7 +121,10 @@ final class TVRemoteChannel {
     private func handle(_ message: Wire.Message) throws {
         if let configure = try message.nested(1) {
             let negotiated = (configure.integer(1) ?? 0) & Self.wanted
-            guard negotiated & 2 != 0 else { fail("电视未开启网络遥控。") ; return }
+            guard negotiated & 2 != 0 else {
+                fail("电视未开启网络遥控。")
+                return
+            }
             features = negotiated
             let info = Wire.string(1, "iPhone") + Wire.string(2, "Apple") + Wire.integer(3, 2)
                 + Wire.string(4, ProcessInfo.processInfo.operatingSystemVersionString)
@@ -147,14 +151,17 @@ final class TVRemoteChannel {
             event(.textFocus(editor != nil))
         } else if let change = try message.nested(22), let status = try change.nested(2), editor != nil {
             updateEditor(status)
+            event(.textFocus(true))
         } else if let selection = try message.nested(23), var editor {
             editor.start = min(selection.integer(2) ?? 0, 1_000_000)
             editor.end = max(editor.start, min(selection.integer(3) ?? 0, 1_000_000))
             self.editor = editor
-        } else if let begin = try message.nested(30), let id = begin.integer(1) {
-            event(.voiceBegin(id))
-        } else if let end = try message.nested(32), let id = end.integer(1) {
-            event(.voiceEnd(id))
+        } else if message.bytes(24) != nil {
+            event(.textFocus(false))
+        } else if let begin = try message.nested(30) {
+            event(.voiceBegin(begin.integer(1) ?? 0))
+        } else if let end = try message.nested(32) {
+            event(.voiceEnd(end.integer(1) ?? 0))
         } else if message.bytes(3) != nil {
             fail("电视拒绝了遥控指令。")
         }

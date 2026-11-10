@@ -17,6 +17,10 @@ jobs:
           xcodebuild -version
           command -v xcodegen || brew install xcodegen
           xcodegen generate
+      - name: Check remote message framing
+        run: |
+          swiftc App/TVRemoteWire.swift Tests/RemoteWireChecks.swift -o "$RUNNER_TEMP/remote-wire-checks"
+          "$RUNNER_TEMP/remote-wire-checks"
       - name: Build and package IPA
         run: |
           set -euo pipefail

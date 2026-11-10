@@ -69,10 +69,11 @@ enum TVRemoteWire {
                     guard let value = try readVarint(data, cursor: &cursor) else { throw Invalid.field }
                     integers[field] = value
                 case 2:
-                    guard let count = try readVarint(data, cursor: &cursor), count <= data.endIndex - cursor else {
+                    guard let rawCount = try readVarint(data, cursor: &cursor), let count = Int(exactly: rawCount),
+                          count <= data.endIndex - cursor else {
                         throw Invalid.field
                     }
-                    let end = cursor + Int(count)
+                    let end = cursor + count
                     blobs[field] = Data(data[cursor..<end])
                     cursor = end
                 case 1, 5:

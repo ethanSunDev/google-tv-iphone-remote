@@ -123,7 +123,7 @@ final class TVRemoteModel: ObservableObject {
     }
 
     func sendText(_ text: String) -> Bool {
-        guard phase == .ready, textSupported else { return false }
+        guard phase == .ready, textSupported, textFocused else { return false }
         return remote?.sendText(text) == true
     }
 

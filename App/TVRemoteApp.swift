@@ -59,6 +59,9 @@ private struct RemoteView: View {
             if phase == .active { model.resume() }
             if phase == .background { model.stop() }
         }
+        .onChange(of: model.phase) { phase in
+            if phase != .ready { microphoneHeld = false }
+        }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
             let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             if model.voiceActive, type == AVAudioSession.InterruptionType.began.rawValue {
@@ -204,6 +207,7 @@ private struct RemoteView: View {
             .opacity(model.voiceSupported ? 1 : 0.45)
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(model.voiceActive ? "结束语音" : "开始语音")
+            .accessibilityHint(model.voiceSupported ? "" : "当前电视未提供语音搜索")
             .accessibilityAction {
                 if model.voiceActive { model.finishVoice() } else { model.startVoice() }
             }
